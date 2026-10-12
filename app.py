@@ -51,6 +51,13 @@ if "view_year" not in st.session_state:
 if "view_month" not in st.session_state:
     st.session_state.view_month = date.today().month
 
+# 저장 직후 월 이동은 위젯 생성 전에 처리해야 합니다.
+if "navigate_to_date" in st.session_state:
+    target_date = st.session_state.pop("navigate_to_date")
+    st.session_state.selected_date = target_date
+    st.session_state.view_year = target_date.year
+    st.session_state.view_month = target_date.month
+
 def sync_selected_month():
     current = st.session_state.selected_date
     y, m = st.session_state.view_year, st.session_state.view_month
@@ -171,10 +178,9 @@ if submitted:
                 "member": member,
                 "content": content.strip(),
             }).execute()
-            st.session_state.selected_date = schedule_date
-            st.session_state.view_year = schedule_date.year
-            st.session_state.view_month = schedule_date.month
-            st.session_state.pop("pending_delete", None)
-            st.rerun()
         except Exception as exc:
             st.error(f"일정 저장에 실패했습니다: {exc}")
+        else:
+            st.session_state.navigate_to_date = schedule_date
+            st.session_state.pop("pending_delete", None)
+            st.rerun()
