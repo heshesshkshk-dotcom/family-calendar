@@ -74,11 +74,6 @@ with col_month:
                          format_func=lambda value: f"{value}월",
                          key="view_month", on_change=sync_selected_month)
 
-# 일정 저장 후 이동했을 때 달력 선택도 저장한 날짜로 맞춥니다.
-if "calendar_reset_to_date" in st.session_state:
-    target = st.session_state.pop("calendar_reset_to_date")
-    st.session_state.pop(f"mobile_calendar_days_{target.year}_{target.month}", None)
-
 st.subheader(f"📅 {year}년 {month}월")
 first_day = date(year, month, 1)
 next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
@@ -103,94 +98,24 @@ for item in monthly_schedules:
     day = int(item["date"][-2:])
     schedule_map.setdefault(day, []).append(item)
 
-# 모바일에서도 7열을 유지하는 날짜 선택 달력.
-# Streamlit의 st.columns(7)은 휴대폰에서 세로로 쌓이므로 사용하지 않습니다.
-# 라디오 선택 위젯의 날짜들을 CSS Grid 7열로 배치합니다.
-first_weekday = date(year, month, 1).weekday()  # 월=0, 일=6
-last_day = calendar.monthrange(year, month)[1]
+# 모바일에서도 날짜 버튼이 한 칸에 들어가도록 간단한 숫자만 표시
+weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+header_cols = st.columns(7, gap="small")
+for i, weekday in enumerate(weekdays):
+    header_cols[i].markdown(f"**{weekday}**")
 
-st.markdown(f"""
-<style>
-/* 날짜 선택 위젯만 적용: 다른 입력폼에는 영향을 주지 않습니다. */
-.st-key-mobile_calendar_days div[role="radiogroup"] {{
-    display: grid !important;
-    grid-template-columns: repeat(7, minmax(0, 1fr)) !important;
-    gap: 4px !important;
-    align-items: stretch;
-}}
-.st-key-mobile_calendar_days div[role="radiogroup"] > label {{
-    min-width: 0 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 9px 1px !important;
-    border: 1px solid #d9dee5 !important;
-    border-radius: 8px !important;
-    justify-content: center !important;
-    text-align: center !important;
-    cursor: pointer !important;
-    background: #fff;
-}}
-.st-key-mobile_calendar_days div[role="radiogroup"] > label:first-child {{
-    grid-column-start: {first_weekday + 1};
-}}
-.st-key-mobile_calendar_days div[role="radiogroup"] > label:has(input:checked) {{
-    background: #dbeafe !important;
-    border-color: #2563eb !important;
-    font-weight: 700;
-}}
-.st-key-mobile_calendar_days div[role="radiogroup"] > label > div:first-child {{
-    display: none !important;
-}}
-.st-key-mobile_calendar_days div[role="radiogroup"] > label p {{
-    font-size: clamp(10px, 2.8vw, 15px) !important;
-    line-height: 1.3 !important;
-    overflow-wrap: anywhere;
-}}
-.calendar-weekdays {{
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    text-align: center;
-    font-weight: 700;
-    margin-bottom: 6px;
-}}
-@media (max-width: 480px) {{
-    .st-key-mobile_calendar_days div[role="radiogroup"] {{ gap: 2px !important; }}
-    .st-key-mobile_calendar_days div[role="radiogroup"] > label {{
-        padding: 9px 0 !important;
-        border-radius: 5px !important;
-    }}
-}}
-</style>
-<div class="calendar-weekdays">
-  <span>월</span><span>화</span><span>수</span><span>목</span>
-  <span>금</span><span>토</span><span>일</span>
-</div>
-""", unsafe_allow_html=True)
-
-# 달을 바꿀 때 날짜 선택 위젯도 새로 만들기 위해 월별 키를 사용합니다.
-# 라디오 값이 없을 때는 현재 선택 날짜를 기본값으로 지정합니다.
-calendar_key = f"mobile_calendar_days_{year}_{month}"
-
-def on_calendar_change():
-    chosen_day = st.session_state[calendar_key]
-    st.session_state.selected_date = date(year, month, chosen_day)
-    st.session_state.pop("pending_delete", None)
-
-# 동적 key에 고정 CSS 클래스가 생기도록 컨테이너에 별도 key를 지정합니다.
-with st.container(key="mobile_calendar_days"):
-    default_day = st.session_state.selected_date.day if (
-        st.session_state.selected_date.year == year
-        and st.session_state.selected_date.month == month
-    ) else 1
-    st.radio(
-        "날짜 선택",
-        options=list(range(1, last_day + 1)),
-        index=default_day - 1,
-        format_func=lambda day: f"{day} 📌" if schedule_map.get(day) else str(day),
-        key=calendar_key,
-        label_visibility="collapsed",
-        on_change=on_calendar_change,
-    )
+for week in calendar.monthcalendar(year, month):
+    cols = st.columns(7, gap="small")
+    for i, day in enumerate(week):
+        if day == 0:
+            continue
+        count = len(schedule_map.get(day, []))
+        label = f"{day} 📌" if count else str(day)
+        if cols[i].button(label, key=f"day_{year}_{month}_{day}",
+                          help=f"{day}일: 일정 {count}건", use_container_width=True):
+            st.session_state.selected_date = date(year, month, day)
+            st.session_state.pop("pending_delete", None)
+            st.rerun()
 
 selected_date = st.session_state.selected_date
 st.divider()
@@ -257,6 +182,5 @@ if submitted:
             st.error(f"일정 저장에 실패했습니다: {exc}")
         else:
             st.session_state.navigate_to_date = schedule_date
-            st.session_state.calendar_reset_to_date = schedule_date
             st.session_state.pop("pending_delete", None)
             st.rerun()
